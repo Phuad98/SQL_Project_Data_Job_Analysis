@@ -184,6 +184,186 @@ SELECT
     company_job_count.total_jobs
 FROM company_dim
 LEFT JOIN company_job_count
-    ON company_job_count.company_id = company_dim.company_id
+    ON company_dim.company_id = company_job_count.company_id
 ORDER BY
     total_jobs DESC
+
+/*
+Identify the top 5 skills that are most frequently mentioned in job postings. Use a subquery to
+find the skill IDs with the highest counts in the skills_job_dim table and then join this result
+with the skills_dim table to get the skill names.
+*/
+
+WITH top_skills AS (
+    SELECT 
+        skill_id,
+        COUNT(*) AS skill_count
+    FROM 
+        skills_job_dim
+    GROUP BY 
+        skill_id
+    ORDER BY 
+        skill_count DESC
+    LIMIT 5
+)
+SELECT *
+FROM     top_skills
+
+WITH top_skills AS (
+    SELECT 
+        skill_id,
+        COUNT(*) AS skill_count
+    FROM 
+        skills_job_dim
+    GROUP BY 
+        skill_id
+    ORDER BY 
+        skill_count DESC
+    LIMIT 5
+)
+SELECT
+    skills_dim.skill_id,
+    skills_dim.skills,
+    top_skills.skill_count
+FROM 
+    top_skills
+JOIN skills_dim
+    ON skills_dim.skill_id = top_skills.skill_id
+ORDER BY skill_count DESC
+
+/* Determine the size category ('Small', 'Medium', or 'Large') for each company by first identifying
+the number of job postings they have. Use a subquery to calculate the total job postings per
+company. A company is considered 'Small' if it has less than 10 job postings, 'Medium' if the
+number of job postings is between 10 and 50, and 'Large' if it has more than 50 job postings.
+Implement a subquery to aggregate job counts per company before classifying them based on
+size. */
+
+
+WITH company_job_count AS (
+    SELECT
+            company_id,
+            COUNT (*) AS total_jobs
+    FROM   
+        job_postings_fact
+    GROUP BY
+        company_id
+        )
+SELECT *
+FROM company_job_count
+
+WITH company_job_count AS (
+    SELECT
+            company_id,
+            COUNT (*) AS total_jobs
+    FROM   
+        job_postings_fact
+    GROUP BY
+        company_id
+        )
+SELECT
+    name AS company_name,
+    total_jobs,
+    CASE
+        WHEN total_jobs < 10 THEN 'Small'
+        WHEN total_jobs BETWEEN 10 AND 50 THEN 'Medium'
+        ELSE 'Large'
+    END AS company_size
+FROM company_dim
+LEFT JOIN company_job_count AS job_counts
+    ON company_dim.company_id = job_counts.company_id
+ORDER BY total_jobs DESC;
+
+/*
+Find the count of the number of remote job postings per skill
+    - Display the top 5 skills by their demand in remote jobs
+    - Include skill ID, name, and count of postings requiring the skill
+*/
+
+WITH remote_job_skills AS (
+    SELECT 
+        skill_id,
+        COUNT(*) AS skill_count
+    FROM
+        skills_job_dim AS skills_to_job
+    INNER JOIN job_postings_fact AS job_postings 
+        ON job_postings.job_id = skills_to_job.job_id
+    WHERE
+        job_postings.job_work_from_home = True AND
+        job_postings.job_title_short = 'Data Analyst'
+    GROUP BY
+        skill_id
+)
+
+SELECT 
+    skills.skill_id,
+    skills AS skill_name,
+    skill_count  
+FROM remote_job_skills
+INNER JOIN skills_dim AS skills ON skills.skill_id = remote_job_skills.skill_id
+ORDER BY
+    skill_count DESC
+LIMIT 5;
+
+/*
+Find job postings from the first quarter that have a salary greater than $70K
+- Combine job posting tables from the first quarter of 2023 (Jan-Mar)
+- Gets job postings with an average yearly salary > $70,000 
+- Filter for Data Analyst Jobs and order by salary
+*/
+
+SELECT
+	job_title_short,
+	job_location,
+	job_via,
+	job_posted_date::DATE,
+    salary_year_avg
+FROM (
+    SELECT *
+    FROM january_job
+    UNION ALL
+    SELECT *
+    FROM february_job
+    UNION ALL
+    SELECT *
+    FROM march_job
+) AS quarter1_job_postings
+WHERE
+    salary_year_avg > 70000 AND
+    job_title_short = 'Data Analyst'
+ORDER BY
+    salary_year_avg DESC
+
+/*
+· Get the corresponding skill and skill type for each job posting in q1
+. Includes those without any skills, too
+. Why? Look at the skills and the type for each job in the first quarter that has a salary > $70,000
+*/
+
+SELECT
+    quarter1_job_postings.job_id,
+    job_title_short,
+    salary_year_avg,
+    skills_dim.skills,
+    skills_dim.type AS skill_type
+FROM (
+        SELECT *
+        FROM january_job
+        UNION ALL
+        SELECT *
+        FROM february_job
+        UNION ALL
+        SELECT *
+        FROM march_job
+        ) AS quarter1_job_postings
+LEFT JOIN skills_job_dim
+        ON skills_job_dim.job_id = quarter1_job_postings.job_id
+LEFT JOIN skills_dim
+        ON skills_dim.skill_id = skills_job_dim.skill_id
+WHERE
+    salary_year_avg > 70000 AND
+    job_title_short = 'Data Analyst'
+ORDER BY
+    salary_year_avg DESC
+
+
+ 
